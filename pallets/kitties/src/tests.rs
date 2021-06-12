@@ -287,6 +287,30 @@ fn can_auto_breed() {
     });
 }
 
+/* Unit test attempt for Difficulty Adjustment Algorithm */
+
+fn can_increment_difficulty() {
+    new_test_ext().execute_with(|| {
+        
+        // Creating kitties
+        assert_ok!(KittiesModule::create(Origin::signed(100)));
+        assert_ok!(KittiesModule::create(Origin::signed(101)));
+
+        // Passing data to auto_breed function
+        assert_ok!(KittiesModule::auto_breed(Origin::none(), 0, 1, 0, 0));
+        
+        // Setting kitty_id variables
+        let kitty_id_1 = 0;
+        let kitty_id_2 = 1;
+
+        // Calling auto_breed function
+        KittiesModule::auto_breed(Origin::none(), kitty_id_1, kitty_id_2, 0, 0);
+
+        // Asserting that the last event must be equal to kitty_id indexes with their respective difficulty values increased by 1
+        assert_eq!(last_event(), Event::kitties(RawEvent::KittyDifficultyMultiplierUpdated(0, 1, 1, 1)));
+    });
+}
+
 #[test]
 fn can_validate_unsigned() {
     new_test_ext().execute_with(|| {

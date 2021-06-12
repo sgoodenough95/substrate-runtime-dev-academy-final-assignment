@@ -53,7 +53,7 @@ pub trait Config: orml_nft::Config<TokenData = Kitty, ClassData = ()> + SendTran
 	type Randomness: Randomness<Self::Hash>;
 	type Currency: Currency<Self::AccountId>;
 	type WeightInfo: WeightInfo;
-	type DefaultDifficulty: Get<u32>;
+	type DefaultDifficulty: Get<u32>;	// 'Get' passes value to trait
 }
 
 type KittyIndexOf<T> = <T as orml_nft::Config>::TokenId;
@@ -67,6 +67,8 @@ decl_storage! {
 		pub ClassId get(fn class_id): T::ClassId;
 		/// Nonce for auto breed to prevent replay attack
 		pub AutoBreedNonce get(fn auto_breed_nonce): u32;
+		/// Kitty difficulty multipler
+		pub KittyDifficultyMultipler get(fn kitty_difficulty_multiplier): map hasher(blake2_128_concat) KittyIndexOf<T> => u32;
 	}
 	add_extra_genesis {
 		build(|_config| {
@@ -93,6 +95,8 @@ decl_event! {
 		KittyPriceUpdated(AccountId, KittyIndex, Option<Balance>),
 		/// A kitty is sold. \[old_owner, new_owner, kitty_id, price\]
 		KittySold(AccountId, AccountId, KittyIndex, Balance),
+		/// The kitty difficulty multiplier is updated
+		KittyDifficultyMultiplierUpdated(KittyIndex, u32, KittyIndex, u32),
 	}
 }
 
@@ -199,6 +203,24 @@ decl_module! {
 			let kitty2 = NftModule::<T>::tokens(Self::class_id(), kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
 			Self::do_breed(kitty1.owner, kitty1.data, kitty2.data)?;
+
+			/* Implementing logic of Difficulty Adjustment Algorithm */
+
+			/// Retrieving current difficulty multiplier values
+			let check_difficulty_1 = KittyDifficultyMultipler::<T>::get(kitty_id_1);
+			let check_difficulty_2 = KittyDifficultyMultipler::<T>::get(kitty_id_2);
+
+			/// Incrementing difficulty values following breeding
+			let incremented_difficulty_1 = check_difficulty_1.saturating_add(1);
+			let incremented_difficulty_2 = check_difficulty_2.saturating_add(1);
+
+			/// Inserting new difficulty values into storage
+			KittyDifficultyMultipler::<T>::insert(kitty_id_1, incremented_difficulty_1);
+			KittyDifficultyMultipler::<T>::insert(kitty_id_2, incremented_difficulty_2);
+
+			/// Emit event declaring new difficulty values of kitties
+			Self::deposit_event(RawEvent::KittyDifficultyMultiplierUpdated(kitty_id_1, incremented_difficulty_1, kitty_id_2, incremented_difficulty_2));
+
 		}
 
 		fn offchain_worker(_now: T::BlockNumber) {
@@ -261,7 +283,12 @@ impl<T: Config> Module<T> {
 		let payload = (kitty_id_1, kitty_id_2, nonce, solution);
 		let hash = payload.using_encoded(blake2_128);
 		let hash_value = u128::from_le_bytes(hash);
-		let difficulty = T::DefaultDifficulty::get();
+
+		/// Add multiplier method
+		let multiplier = KittyDifficultyMultipler::<T>::get(kitty_id_1) * KittyDifficultyMultipler::<T>::get(kitty_id_2) + 1;
+
+		/// New difficulty calculation
+		let difficulty = T::DefaultDifficulty::get() * multiplier;
 
 		hash_value < (u128::max_value() / difficulty as u128)
 	}
